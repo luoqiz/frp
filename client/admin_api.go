@@ -23,8 +23,8 @@ import (
 	"strings"
 
 	"github.com/fatedier/frp/client/proxy"
-	"github.com/fatedier/frp/models/config"
-	"github.com/fatedier/frp/utils/log"
+	"github.com/fatedier/frp/pkg/config"
+	"github.com/fatedier/frp/pkg/util/log"
 )
 
 type GeneralResponse struct {
@@ -62,7 +62,7 @@ func (svr *Service) apiReload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pxyCfgs, visitorCfgs, err := config.LoadAllConfFromIni(svr.cfg.User, content, newCommonCfg.Start)
+	pxyCfgs, visitorCfgs, err := config.LoadAllProxyConfsFromIni(svr.cfg.User, content, newCommonCfg.Start)
 	if err != nil {
 		res.Code = 400
 		res.Msg = err.Error()
@@ -243,7 +243,7 @@ func (svr *Service) apiGetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows := strings.Split(content, "\n")
+	rows := strings.Split(string(content), "\n")
 	newRows := make([]string, 0, len(rows))
 	for _, row := range rows {
 		row = strings.TrimSpace(row)

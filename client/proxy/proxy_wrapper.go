@@ -10,9 +10,9 @@ import (
 
 	"github.com/fatedier/frp/client/event"
 	"github.com/fatedier/frp/client/health"
-	"github.com/fatedier/frp/models/config"
-	"github.com/fatedier/frp/models/msg"
-	"github.com/fatedier/frp/utils/xlog"
+	"github.com/fatedier/frp/pkg/config"
+	"github.com/fatedier/frp/pkg/msg"
+	"github.com/fatedier/frp/pkg/util/xlog"
 
 	"github.com/fatedier/golib/errors"
 )
@@ -227,7 +227,7 @@ func (pw *Wrapper) InWorkConn(workConn net.Conn, m *msg.StartWorkConn) {
 	pw.mu.RLock()
 	pxy := pw.pxy
 	pw.mu.RUnlock()
-	if pxy != nil {
+	if pxy != nil && pw.Phase == ProxyPhaseRunning {
 		xl.Debug("start a new work connection, localAddr: %s remoteAddr: %s", workConn.LocalAddr().String(), workConn.RemoteAddr().String())
 		go pxy.InWorkConn(workConn, m)
 	} else {

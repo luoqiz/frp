@@ -21,8 +21,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/fatedier/frp/models/config"
-	"github.com/fatedier/frp/models/consts"
+	"github.com/fatedier/frp/pkg/config"
+	"github.com/fatedier/frp/pkg/consts"
 )
 
 func init() {
@@ -44,7 +44,7 @@ var tcpMuxCmd = &cobra.Command{
 	Use:   "tcpmux",
 	Short: "Run frpc with a single tcpmux proxy",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		clientCfg, err := parseClientCommonCfg(CfgFileTypeCmd, "")
+		clientCfg, err := parseClientCommonCfg(CfgFileTypeCmd, nil)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)

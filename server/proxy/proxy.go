@@ -22,13 +22,13 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/fatedier/frp/models/config"
-	"github.com/fatedier/frp/models/msg"
-	plugin "github.com/fatedier/frp/models/plugin/server"
+	"github.com/fatedier/frp/pkg/config"
+	"github.com/fatedier/frp/pkg/msg"
+	plugin "github.com/fatedier/frp/pkg/plugin/server"
+	frpNet "github.com/fatedier/frp/pkg/util/net"
+	"github.com/fatedier/frp/pkg/util/xlog"
 	"github.com/fatedier/frp/server/controller"
 	"github.com/fatedier/frp/server/metrics"
-	frpNet "github.com/fatedier/frp/utils/net"
-	"github.com/fatedier/frp/utils/xlog"
 
 	frpIo "github.com/fatedier/golib/io"
 )
@@ -100,7 +100,7 @@ func (pxy *BaseProxy) GetWorkConnFromPool(src, dst net.Addr) (workConn net.Conn,
 			xl.Warn("failed to get work connection: %v", err)
 			return
 		}
-		xl.Info("get a new work connection: [%s]", workConn.RemoteAddr().String())
+		xl.Debug("get a new work connection: [%s]", workConn.RemoteAddr().String())
 		xl.Spawn().AppendPrefix(pxy.GetName())
 		workConn = frpNet.NewContextConn(pxy.ctx, workConn)
 
@@ -159,7 +159,7 @@ func (pxy *BaseProxy) startListenHandler(p Proxy, handler func(Proxy, net.Conn, 
 					xl.Info("listener is closed")
 					return
 				}
-				xl.Debug("get a user connection [%s]", c.RemoteAddr().String())
+				xl.Info("get a user connection [%s]", c.RemoteAddr().String())
 				go handler(p, c, pxy.serverCfg)
 			}
 		}(listener)

@@ -15,13 +15,12 @@
 package client
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"time"
 
 	"github.com/fatedier/frp/assets"
-	frpNet "github.com/fatedier/frp/utils/net"
+	frpNet "github.com/fatedier/frp/pkg/util/net"
 
 	"github.com/gorilla/mux"
 )
@@ -31,7 +30,7 @@ var (
 	httpServerWriteTimeout = 10 * time.Second
 )
 
-func (svr *Service) RunAdminServer(addr string, port int) (err error) {
+func (svr *Service) RunAdminServer(address string) (err error) {
 	// url router
 	router := mux.NewRouter()
 
@@ -51,7 +50,6 @@ func (svr *Service) RunAdminServer(addr string, port int) (err error) {
 		http.Redirect(w, r, "/static/", http.StatusMovedPermanently)
 	})
 
-	address := fmt.Sprintf("%s:%d", addr, port)
 	server := &http.Server{
 		Addr:         address,
 		Handler:      router,

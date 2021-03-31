@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
+	"github.com/fatedier/frp/pkg/config"
+	"github.com/fatedier/frp/pkg/consts"
 
-	"github.com/fatedier/frp/models/config"
-	"github.com/fatedier/frp/models/consts"
+	"github.com/spf13/cobra"
 )
 
 func init() {
@@ -41,7 +41,7 @@ var udpCmd = &cobra.Command{
 	Use:   "udp",
 	Short: "Run frpc with a single udp proxy",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		clientCfg, err := parseClientCommonCfg(CfgFileTypeCmd, "")
+		clientCfg, err := parseClientCommonCfg(CfgFileTypeCmd, nil)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)

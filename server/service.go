@@ -17,39 +17,36 @@ package server
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"io/ioutil"
-	"math/big"
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/fatedier/frp/assets"
-	"github.com/fatedier/frp/models/auth"
-	"github.com/fatedier/frp/models/config"
-	modelmetrics "github.com/fatedier/frp/models/metrics"
-	"github.com/fatedier/frp/models/msg"
-	"github.com/fatedier/frp/models/nathole"
-	plugin "github.com/fatedier/frp/models/plugin/server"
+	"github.com/fatedier/frp/pkg/auth"
+	"github.com/fatedier/frp/pkg/config"
+	modelmetrics "github.com/fatedier/frp/pkg/metrics"
+	"github.com/fatedier/frp/pkg/msg"
+	"github.com/fatedier/frp/pkg/nathole"
+	plugin "github.com/fatedier/frp/pkg/plugin/server"
+	"github.com/fatedier/frp/pkg/transport"
+	"github.com/fatedier/frp/pkg/util/log"
+	frpNet "github.com/fatedier/frp/pkg/util/net"
+	"github.com/fatedier/frp/pkg/util/tcpmux"
+	"github.com/fatedier/frp/pkg/util/util"
+	"github.com/fatedier/frp/pkg/util/version"
+	"github.com/fatedier/frp/pkg/util/vhost"
+	"github.com/fatedier/frp/pkg/util/xlog"
 	"github.com/fatedier/frp/server/controller"
 	"github.com/fatedier/frp/server/group"
 	"github.com/fatedier/frp/server/metrics"
 	"github.com/fatedier/frp/server/ports"
 	"github.com/fatedier/frp/server/proxy"
 	"github.com/fatedier/frp/server/visitor"
-	"github.com/fatedier/frp/utils/log"
-	frpNet "github.com/fatedier/frp/utils/net"
-	"github.com/fatedier/frp/utils/tcpmux"
-	"github.com/fatedier/frp/utils/util"
-	"github.com/fatedier/frp/utils/version"
-	"github.com/fatedier/frp/utils/vhost"
-	"github.com/fatedier/frp/utils/xlog"
 
 	"github.com/fatedier/golib/net/mux"
 	fmux "github.com/hashicorp/yamux"
@@ -101,6 +98,14 @@ type Service struct {
 }
 
 func NewService(cfg config.ServerCommonConf) (svr *Service, err error) {
+	tlsConfig, err := transport.NewServerTLSConfig(
+		cfg.TLSCertFile,
+		cfg.TLSKeyFile,
+		cfg.TLSTrustedCaFile)
+	if err != nil {
+		return
+	}
+
 	svr = &Service{
 		ctlManager:    NewControlManager(),
 		pxyManager:    proxy.NewManager(),
@@ -112,7 +117,7 @@ func NewService(cfg config.ServerCommonConf) (svr *Service, err error) {
 		},
 		httpVhostRouter: vhost.NewRouters(),
 		authVerifier:    auth.NewAuthVerifier(cfg.ServerConfig),
-		tlsConfig:       generateTLSConfig(),
+		tlsConfig:       tlsConfig,
 		cfg:             cfg,
 	}
 
@@ -172,7 +177,8 @@ func NewService(cfg config.ServerCommonConf) (svr *Service, err error) {
 	}
 
 	// Listen for accepting connections from client.
-	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.BindAddr, cfg.BindPort))
+	address := net.JoinHostPort(cfg.BindAddr, strconv.Itoa(cfg.BindPort))
+	ln, err := net.Listen("tcp", address)
 	if err != nil {
 		err = fmt.Errorf("Create server listener error, %v", err)
 		return
@@ -183,13 +189,14 @@ func NewService(cfg config.ServerCommonConf) (svr *Service, err error) {
 	ln = svr.muxer.DefaultListener()
 
 	svr.listener = ln
-	log.Info("frps tcp listen on %s:%d", cfg.BindAddr, cfg.BindPort)
+	log.Info("frps tcp listen on %s", address)
 
 	// Listen for accepting connections from client using kcp protocol.
 	if cfg.KCPBindPort > 0 {
-		svr.kcpListener, err = frpNet.ListenKcp(cfg.BindAddr, cfg.KCPBindPort)
+		address := net.JoinHostPort(cfg.BindAddr, strconv.Itoa(cfg.KCPBindPort))
+		svr.kcpListener, err = frpNet.ListenKcp(address)
 		if err != nil {
-			err = fmt.Errorf("Listen on kcp address udp [%s:%d] error: %v", cfg.BindAddr, cfg.KCPBindPort, err)
+			err = fmt.Errorf("Listen on kcp address udp %s error: %v", address, err)
 			return
 		}
 		log.Info("frps kcp listen on udp %s:%d", cfg.BindAddr, cfg.KCPBindPort)
@@ -209,7 +216,7 @@ func NewService(cfg config.ServerCommonConf) (svr *Service, err error) {
 		}, svr.httpVhostRouter)
 		svr.rc.HTTPReverseProxy = rp
 
-		address := fmt.Sprintf("%s:%d", cfg.ProxyBindAddr, cfg.VhostHTTPPort)
+		address := net.JoinHostPort(cfg.ProxyBindAddr, strconv.Itoa(cfg.VhostHTTPPort))
 		server := &http.Server{
 			Addr:    address,
 			Handler: rp,
@@ -234,11 +241,13 @@ func NewService(cfg config.ServerCommonConf) (svr *Service, err error) {
 		if httpsMuxOn {
 			l = svr.muxer.ListenHttps(1)
 		} else {
-			l, err = net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.ProxyBindAddr, cfg.VhostHTTPSPort))
+			address := net.JoinHostPort(cfg.ProxyBindAddr, strconv.Itoa(cfg.VhostHTTPSPort))
+			l, err = net.Listen("tcp", address)
 			if err != nil {
 				err = fmt.Errorf("Create server listener error, %v", err)
 				return
 			}
+			log.Info("https service listen on %s", address)
 		}
 
 		svr.rc.VhostHTTPSMuxer, err = vhost.NewHTTPSMuxer(l, vhostReadWriteTimeout)
@@ -246,7 +255,6 @@ func NewService(cfg config.ServerCommonConf) (svr *Service, err error) {
 			err = fmt.Errorf("Create vhost httpsMuxer error, %v", err)
 			return
 		}
-		log.Info("https service listen on %s:%d", cfg.ProxyBindAddr, cfg.VhostHTTPSPort)
 	}
 
 	// frp tls listener
@@ -257,14 +265,14 @@ func NewService(cfg config.ServerCommonConf) (svr *Service, err error) {
 	// Create nat hole controller.
 	if cfg.BindUDPPort > 0 {
 		var nc *nathole.Controller
-		addr := fmt.Sprintf("%s:%d", cfg.BindAddr, cfg.BindUDPPort)
-		nc, err = nathole.NewController(addr)
+		address := net.JoinHostPort(cfg.BindAddr, strconv.Itoa(cfg.BindUDPPort))
+		nc, err = nathole.NewController(address)
 		if err != nil {
 			err = fmt.Errorf("Create nat hole controller error, %v", err)
 			return
 		}
 		svr.rc.NatHoleController = nc
-		log.Info("nat hole udp service listen on %s:%d", cfg.BindAddr, cfg.BindUDPPort)
+		log.Info("nat hole udp service listen on %s", address)
 	}
 
 	var statsEnable bool
@@ -277,7 +285,8 @@ func NewService(cfg config.ServerCommonConf) (svr *Service, err error) {
 			return
 		}
 
-		err = svr.RunDashboardServer(cfg.DashboardAddr, cfg.DashboardPort)
+		address := net.JoinHostPort(cfg.DashboardAddr, strconv.Itoa(cfg.DashboardPort))
+		err = svr.RunDashboardServer(address)
 		if err != nil {
 			err = fmt.Errorf("Create dashboard web server error, %v", err)
 			return
@@ -505,25 +514,4 @@ func (svr *Service) RegisterWorkConn(workConn net.Conn, newMsg *msg.NewWorkConn)
 func (svr *Service) RegisterVisitorConn(visitorConn net.Conn, newMsg *msg.NewVisitorConn) error {
 	return svr.rc.VisitorManager.NewConn(newMsg.ProxyName, visitorConn, newMsg.Timestamp, newMsg.SignKey,
 		newMsg.UseEncryption, newMsg.UseCompression)
-}
-
-// Setup a bare-bones TLS config for the server
-func generateTLSConfig() *tls.Config {
-	key, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		panic(err)
-	}
-	template := x509.Certificate{SerialNumber: big.NewInt(1)}
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
-	if err != nil {
-		panic(err)
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-
-	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		panic(err)
-	}
-	return &tls.Config{Certificates: []tls.Certificate{tlsCert}}
 }
